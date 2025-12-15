@@ -1,34 +1,32 @@
 # Mobile QA Multi-Agent System
 
-An autonomous multi-agent system for mobile app testing using natural language test definitions. The system implements a Supervisor-Planner-Executor architecture to automate QA testing on Android applications.
+A multi-agent AI system for automated mobile app testing using natural language test definitions. This project implements a three-tier agent architecture (Supervisor-Planner-Executor) to enable autonomous QA testing on Android applications.
 
 ## Demo
 
-Watch the system in action:
-
-https://github.com/user-attachments/assets/YOUR-VIDEO-ID/demo.mp4
-
-> **To add your video:** After creating your GitHub repo, edit the README on GitHub, drag-and-drop your `demo.mp4` into the editor, and GitHub will auto-generate the playable video link. See the "Adding Your Demo Video" section at the bottom for step-by-step instructions.
+[View demo video](demo.mp4)
 
 ## Overview
 
-This system executes natural language test cases on Android applications using a three-agent architecture:
+This system automates the execution of test cases written in plain English against Android applications. The implementation uses three specialized AI agents that collaborate to interpret test objectives, interact with the mobile UI, and accurately determine test outcomes.
 
-- **Planner Agent**: Analyzes UI state and determines next action
-- **Executor Agent**: Executes planned actions on the device
-- **Supervisor Agent**: Monitors execution and validates test outcomes
+**Agent Architecture:**
 
-The agents work together to interpret test goals, navigate the app, and accurately report pass/fail results while distinguishing between action failures and assertion failures.
+- **Planner Agent**: Analyzes current UI state through screenshots and XML hierarchy to determine the next appropriate action
+- **Executor Agent**: Performs planned actions on the device via ADB commands
+- **Supervisor Agent**: Monitors test execution and validates outcomes against expected results
 
-## Features
+A key design goal was enabling the system to differentiate between action failures (unable to locate UI elements) and assertion failures (elements found but state doesn't match expectations). This distinction provides more actionable test results.
 
-- Natural language test definitions in YAML format
-- Screenshot + UI XML context for robust state understanding
-- Automatic popup and dialog handling
-- Distinguishes between action failures and assertion failures
-- Artifact saving after each step (screenshots, UI dumps, verdicts)
-- Swappable LLM models (default: Google Gemini)
-- ADB-based Android device automation
+## Key Features
+
+- **Natural Language Test Definitions**: Write test cases in plain English using YAML format
+- **Multimodal UI Understanding**: Combines screenshot analysis and UI XML hierarchy for robust state interpretation
+- **Intelligent Dialog Handling**: Automatically detects and handles popups and permission dialogs
+- **Granular Failure Classification**: Distinguishes between action failures (element not found) and assertion failures (incorrect state)
+- **Comprehensive Artifact Generation**: Saves screenshots, UI dumps, and agent decisions at each execution step
+- **Flexible LLM Backend**: Model-agnostic design with Google Gemini as the default provider
+- **ADB Integration**: Direct Android device automation via Android Debug Bridge
 
 ## Requirements
 
@@ -154,71 +152,82 @@ tests:
 
 ## Architecture
 
+The system follows a linear pipeline where each agent has a specific responsibility in the test execution flow.
+
 ### Planner Agent
 
-Analyzes the current UI state (screenshot + XML hierarchy) and decides what action to take next based on the test goal.
+The Planner receives the test goal along with the current UI state (screenshot + XML hierarchy) and determines the next action to execute.
 
-**Capabilities:**
-- Context-aware planning based on visible UI elements
-- Automatic text input field detection
-- Smart navigation decisions
-- Returns structured JSON actions
+**Key Responsibilities:**
+- Analyzes visible UI elements and their properties from the XML dump
+- Selects appropriate actions based on the test objective and current screen state
+- Identifies text input fields and determines when text entry is needed
+- Outputs structured JSON action specifications for the Executor
 
 ### Executor Agent
 
-Executes planned actions on the Android device via ADB commands.
+The Executor takes planned actions and executes them on the Android device using ADB commands.
 
-**Capabilities:**
-- Action execution with retry logic
-- Automatic popup handling
-- Text input with field focusing
-- Screenshot capture and UI dumps
-- Error recovery
+**Key Responsibilities:**
+- Translates high-level actions into ADB commands
+- Implements retry logic for flaky UI interactions
+- Handles unexpected popups and permission dialogs automatically
+- Manages text input with proper field focusing
+- Captures post-action screenshots and UI dumps for verification
 
-**Supported Actions:**
-- `tap_by_text` - Tap on visible text elements
-- `tap_xy` - Tap at specific coordinates
-- `input_text` - Type text into input fields
-- `swipe` - Swipe gestures
-- `keyevent` - Send key events
-- `assert` - Verify UI state
-- `wait` - Wait for UI changes
-- `done` - Complete test successfully
+**Supported Action Types:**
+- `tap_by_text` - Tap elements by visible text content
+- `tap_xy` - Tap at specific screen coordinates
+- `input_text` - Enter text into input fields
+- `swipe` - Execute swipe gestures (up, down, left, right)
+- `keyevent` - Send Android key events (back, home, enter, etc.)
+- `assert` - Verify expected UI state or element properties
+- `wait` - Pause execution for UI stabilization
+- `done` - Signal successful test completion
 
 ### Supervisor Agent
 
-Monitors test execution and evaluates outcomes.
+The Supervisor monitors the entire test execution and makes the final pass/fail determination.
 
-**Capabilities:**
-- Step-by-step execution monitoring
-- LLM-based assertion verification
-- Distinguishes between action failures and assertion failures
-- Final state validation
-- Comprehensive test reporting
+**Key Responsibilities:**
+- Tracks test progress across all execution steps
+- Uses LLM-based reasoning to verify assertion correctness
+- Classifies failures as either action failures or assertion failures
+- Validates final UI state against expected test outcomes
+- Generates structured test result reports with detailed failure reasoning
 
 ## Artifacts
 
-Each test run generates detailed artifacts in `artifacts/<test_name>/step_<N>/`:
+The system generates comprehensive debugging artifacts for each test execution step. All artifacts are saved to `artifacts/<test_name>/step_<N>/`:
 
-- `screenshot.png` - Screenshot before action
-- `screenshot_post.png` - Screenshot after action
-- `ui.xml` - UI hierarchy dump
-- `ui_post.xml` - UI hierarchy after action
-- `ui_summary.txt` - Human-readable UI summary
-- `action.json` - Planned action
-- `execution_result.json` - Execution result
-- `verdict.json` - Supervisor verdict
+| File | Description |
+|------|-------------|
+| `screenshot.png` | Screen capture before action execution |
+| `screenshot_post.png` | Screen capture after action execution |
+| `ui.xml` | Complete UI hierarchy dump (pre-action) |
+| `ui_post.xml` | Complete UI hierarchy dump (post-action) |
+| `ui_summary.txt` | Human-readable summary of visible UI elements |
+| `action.json` | Planner's structured action decision |
+| `execution_result.json` | Executor's execution result and any errors |
+| `verdict.json` | Supervisor's step-level verdict and reasoning |
 
-Test summary is saved to `artifacts/<test_name>/test_result.json`.
+The final test summary (including overall pass/fail status and failure reasons) is saved to `artifacts/<test_name>/test_result.json`.
 
 ## Example Tests
 
-The repository includes sample tests in `qa_tests.yaml`:
+I've included several test cases in `qa_tests.yaml` to demonstrate different scenarios:
 
-1. **Create Vault** (PASS) - Create and enter a new vault
-2. **Create Note** (PASS) - Create a note with specific content
-3. **Verify Appearance Icon Color** (FAIL_ASSERTION) - Assert icon color mismatch
-4. **Print to PDF** (FAIL_ACTION) - Attempt to access non-existent feature
+1. **Create Vault** (Expected: PASS)
+   Tests basic navigation and vault creation workflow
+
+2. **Create Note** (Expected: PASS)
+   Validates note creation with title and body text input
+
+3. **Verify Appearance Icon Color** (Expected: FAIL_ASSERTION)
+   Demonstrates assertion failure when UI element state doesn't match expectations
+
+4. **Print to PDF** (Expected: FAIL_ACTION)
+   Shows action failure when attempting to access a non-existent mobile feature
 
 ## Troubleshooting
 
@@ -247,9 +256,11 @@ echo $GEMINI_API_KEY
 
 ## Extending the System
 
+The architecture is designed to be extensible. Here are common extension points:
+
 ### Adding New Actions
 
-Implement handler in `src/mobileqa/agents/executor.py`:
+To add custom action types, implement a handler method in [src/mobileqa/agents/executor.py](src/mobileqa/agents/executor.py):
 
 ```python
 def _handle_custom_action(self, params, description):
@@ -259,7 +270,7 @@ def _handle_custom_action(self, params, description):
 
 ### Using Different LLMs
 
-Create a new client in `src/mobileqa/llm/`:
+The system is model-agnostic. To integrate a different LLM provider, create a new client in [src/mobileqa/llm/](src/mobileqa/llm/):
 
 ```python
 class CustomLLMClient:
@@ -267,64 +278,6 @@ class CustomLLMClient:
         # Your implementation
         return {"action_type": "...", ...}
 ```
-
-Update `main.py` to use your client.
-
-## Adding Your Demo Video
-
-GitHub supports video playback directly in README files. Here are **3 working methods**:
-
-### Method 1: Direct Upload via GitHub UI (Easiest - Recommended)
-
-1. Go to your GitHub repository
-2. Click on README.md to edit it
-3. In the editor, drag and drop your `demo.mp4` file directly into the text area
-4. GitHub will upload it and generate a link like:
-   ```
-   https://github.com/user-attachments/assets/abc123.../demo.mp4
-   ```
-5. The video will appear embedded in your README
-6. Save the file
-
-### Method 2: Commit Video to Repository
-
-If your video is under 100MB:
-
-```bash
-# Add demo.mp4to the repo root
-cp /path/to/demo.mp4 "/Users/kiarash/Downloads/Mobile QA Multi-Agent System/"
-
-# Commit it
-git add demo.mp4
-git commit -m "Add demo video"
-git push
-```
-
-Then update README.md with:
-```markdown
-## Demo
-
-https://github.com/USERNAME/REPO-NAME/assets/demo.mp4
-```
-
-Or use HTML5 video tag:
-```html
-<video src="demo.mp4" controls></video>
-```
-
-### Method 3: External Hosting (For Large Files)
-
-**YouTube:**
-```markdown
-[![Demo Video](https://img.youtube.com/vi/YOUR-VIDEO-ID/maxresdefault.jpg)](https://www.youtube.com/watch?v=YOUR-VIDEO-ID)
-```
-
-**Google Drive/Dropbox:**
-Upload video and use the shareable link with a thumbnail.
-
-### Recommended Approach
-
-Use **Method 1** (drag-and-drop in GitHub editor) - it's the easiest and videos play inline automatically!
 
 ## License
 
