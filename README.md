@@ -2,6 +2,14 @@
 
 An autonomous multi-agent system for mobile app testing using natural language test definitions. The system implements a Supervisor-Planner-Executor architecture to automate QA testing on Android applications.
 
+## Demo
+
+Watch the system in action:
+
+https://github.com/user-attachments/assets/YOUR-VIDEO-ID/demo.mp4
+
+> **To add your video:** After creating your GitHub repo, edit the README on GitHub, drag-and-drop your `demo.mp4` into the editor, and GitHub will auto-generate the playable video link. See the "Adding Your Demo Video" section at the bottom for step-by-step instructions.
+
 ## Overview
 
 This system executes natural language test cases on Android applications using a three-agent architecture:
@@ -261,6 +269,62 @@ class CustomLLMClient:
 ```
 
 Update `main.py` to use your client.
+
+## Adding Your Demo Video
+
+GitHub supports video playback directly in README files. Here are **3 working methods**:
+
+### Method 1: Direct Upload via GitHub UI (Easiest - Recommended)
+
+1. Go to your GitHub repository
+2. Click on README.md to edit it
+3. In the editor, drag and drop your `demo.mp4` file directly into the text area
+4. GitHub will upload it and generate a link like:
+   ```
+   https://github.com/user-attachments/assets/abc123.../demo.mp4
+   ```
+5. The video will appear embedded in your README
+6. Save the file
+
+### Method 2: Commit Video to Repository
+
+If your video is under 100MB:
+
+```bash
+# Add demo.mp4to the repo root
+cp /path/to/demo.mp4 "/Users/kiarash/Downloads/Mobile QA Multi-Agent System/"
+
+# Commit it
+git add demo.mp4
+git commit -m "Add demo video"
+git push
+```
+
+Then update README.md with:
+```markdown
+## Demo
+
+https://github.com/USERNAME/REPO-NAME/assets/demo.mp4
+```
+
+Or use HTML5 video tag:
+```html
+<video src="demo.mp4" controls></video>
+```
+
+### Method 3: External Hosting (For Large Files)
+
+**YouTube:**
+```markdown
+[![Demo Video](https://img.youtube.com/vi/YOUR-VIDEO-ID/maxresdefault.jpg)](https://www.youtube.com/watch?v=YOUR-VIDEO-ID)
+```
+
+**Google Drive/Dropbox:**
+Upload video and use the shareable link with a thumbnail.
+
+### Recommended Approach
+
+Use **Method 1** (drag-and-drop in GitHub editor) - it's the easiest and videos play inline automatically!
 
 ## License
 
