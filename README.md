@@ -4,7 +4,11 @@ A multi-agent AI system for automated mobile app testing using natural language 
 
 ## Demo
 
-[View demo video](demo.mp4)
+
+
+https://github.com/user-attachments/assets/d68e176e-ebd1-4619-8aec-8d9ae514fe44
+
+
 
 ## Overview
 
