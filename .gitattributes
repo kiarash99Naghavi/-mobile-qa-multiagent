@@ -1,0 +1,6 @@
+# Handle line endings
+* text=auto
+
+# Large files tracking with Git LFS (optional)
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+*.apk filter=lfs diff=lfs merge=lfs -text

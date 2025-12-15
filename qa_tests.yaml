@@ -1,0 +1,76 @@
+# Mobile QA Test Definitions for Obsidian
+# Test suite demonstrating PASS and FAIL scenarios (action vs assertion failures)
+
+tests:
+  # TEST 1: PASS - Create vault and enter it
+  - name: test_create_vault_pass
+    package: md.obsidian
+    goal: |
+      Open Obsidian, create a new Vault named 'TestVault', and enter the vault.
+
+      Steps:
+      1. If you see the main screen, tap to start vault creation
+      2. Choose storage location and folder
+      3. After the vault is created, verify you're inside the vault (look for 'Create new note' or empty vault screen)
+      4. Use the 'done' action when you confirm you're successfully inside the new vault
+    setup:
+      - "Launch Obsidian app"
+      - "Handle any initial permissions or onboarding screens"
+    expected_result: PASS
+
+  # TEST 2: PASS - Create note with specific content
+  - name: test_create_note_pass
+    package: md.obsidian
+    goal: |
+      Create a new note titled 'Meeting Notes' and type the text 'Daily Standup' into the body.
+
+      Steps:
+      1. Tap 'Create new note' button
+      2. Type 'Meeting Notes' in the title field (the top field)
+      3. Type 'Daily Standup' in the body field (below the title)
+      4. Verify both title and body are correct, then use 'done' action
+    setup:
+      - "Launch Obsidian app"
+      - "Ensure a vault exists (create one if needed)"
+    expected_result: PASS
+
+  # TEST 3: FAIL (ASSERTION) - Verify color that doesn't match
+  # Note: The icon is monochrome/default theme color, not red - this should FAIL_ASSERTION
+  - name: test_appearance_icon_color_fail
+    package: md.obsidian
+    goal: |
+      Go to Settings and verify that the 'Appearance' tab icon is the color Red.
+
+      Steps:
+      1. Open the sidebar
+      2. Look for the gear icon and tap on it
+      3. Once in Settings, look for the 'Appearance' section and tap on it
+      4. Use the 'assert' action to verify if the Appearance icon is red (it's actually monochrome, so this should fail)
+
+      Expected outcome: The assertion should FAIL because the icon is NOT red.
+    setup:
+      - "Launch Obsidian app"
+      - "Ensure a vault exists"
+    expected_result: FAIL_ASSERTION
+    reason: "The Appearance tab icon is monochrome/default color, not red. Agent should detect this mismatch."
+
+  # TEST 4: FAIL (ACTION) - Click non-existent element
+  # Note: This feature doesn't exist in mobile version - this should FAIL_ACTION
+  - name: test_print_to_pdf_fail
+    package: md.obsidian
+    goal: |
+      Find and click the 'Print to PDF' button in the main file menu.
+
+      Steps:
+      1. Ensure the 'Meeting Notes' note is open (if not, navigate back to it)
+      2. Find the 3-dot menu (⋮) or 'More options' button and tap on it
+      3. Search thoroughly through all visible menu items for 'Print to PDF'
+      4. If 'Print to PDF' is not found after thorough search, use the 'fail' action
+
+      Expected outcome: The 'Print to PDF' button does not exist, so you should use 'fail' action.
+    setup:
+      - "Launch Obsidian app"
+      - "Ensure a vault exists"
+      - "Open or create a note"
+    expected_result: FAIL_ACTION
+    reason: "The 'Print to PDF' button does not exist in the mobile version. Agent should report element not found."

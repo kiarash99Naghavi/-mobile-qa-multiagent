@@ -1,0 +1,10 @@
+# Mobile QA Multi-Agent System Dependencies
+
+# Google Gemini SDK
+google-genai>=0.1.0
+
+# YAML parsing for test configurations
+pyyaml>=6.0
+
+# CLI experience
+colorama>=0.4.6
