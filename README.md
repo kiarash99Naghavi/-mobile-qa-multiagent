@@ -8,7 +8,7 @@ A multi-agent AI system for automated mobile app testing using natural language 
 
 https://github.com/user-attachments/assets/d68e176e-ebd1-4619-8aec-8d9ae514fe44
 
-
+Total Execution Time: 5:50
 
 ## Overview
 
