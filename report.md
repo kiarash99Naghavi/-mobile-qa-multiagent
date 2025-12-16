@@ -2,69 +2,63 @@
 
 ## Why Custom Implementation with Google Gemini
 
-After evaluating several existing agent frameworks (Simular's Agent S, Google ADK, LangChain Agents), I decided to build a custom multi-agent architecture using Google's Gemini AI API directly.
+After evaluating existing agent frameworks (Simular's Agent S, Google ADK, LangChain Agents), I built a custom multi-agent architecture using Google's Gemini AI API directly.
 
-### Reasoning
+### Key Reasoning
 
-**1. Better Control Over Agent Orchestration**
+**1. Future-Proof for Fast LLMs and SLMs**
 
-The mobile QA testing workflow requires tight coordination between three specialized agents with very specific roles. Building this from scratch gave me:
-- Complete control over how agents communicate and hand off work
-- Ability to tune prompts specifically for each agent's responsibility
-- Flexibility to implement nuanced logic, like the Supervisor's ability to distinguish between FAIL_ACTION and FAIL_ASSERTION
+A major driver for the custom implementation was flexibility to integrate fast vision-language models:
+- Easy migration to [Apple's Fast Vision-Language Models](https://machinelearning.apple.com/research/fast-vision-language-models) for iOS testing
+- Compatible with emerging SLMs (Small Language Models) for near-real-time testing
+- Framework-agnostic design allows rapid experimentation with lightweight models
+- Enables on-device testing without cloud API dependencies
 
-**2. Simplicity Over Abstraction**
+**2. Better Control Over Agent Orchestration**
 
-Most frameworks are built for more general use cases:
-- Agent S is designed for autonomous agents with memory and long-term planning capabilities
-- Google ADK targets production deployments with complex state management needs
-- My use case is simpler: Plan → Execute → Supervise. This linear pipeline doesn't need heavy abstractions
+The mobile QA workflow requires tight coordination between three specialized agents:
+- Complete control over agent communication and handoffs
+- Custom prompt tuning for each agent's specific role
+- Nuanced logic implementation (e.g., Supervisor distinguishing FAIL_ACTION vs FAIL_ASSERTION)
 
-**3. Direct Access to Gemini's Capabilities**
+**3. Simplicity Over Abstraction**
 
-Working directly with the Gemini API provided several advantages:
-- Easy to swap between models (Flash for speed, Pro for complex reasoning)
-- Straightforward multimodal prompting (feeding screenshots to the LLM)
-- Native structured output for action planning
-- Better cost control by selecting different models for different agents
+My use case is a linear pipeline: Plan → Execute → Supervise
+- Most frameworks target complex scenarios with memory and long-term planning
+- Direct implementation avoids unnecessary abstraction layers
+- Cleaner codebase that's easier to understand and modify
 
-**4. Cleaner Android Integration**
+**4. Direct Gemini API Benefits**
+- Easy model switching (Flash for speed, Pro for reasoning)
+- Native multimodal prompting (screenshots + text)
+- Structured JSON outputs
+- Better cost control per agent
 
-Mobile testing needs deep integration with Android tooling:
-- I could build ADB commands directly into the action primitives
-- Screenshot capture and UI XML parsing happen exactly when needed
-- Mobile-specific behaviors (popup handling, app state resets) are first-class features rather than workarounds
-
-**5. Easier Debugging**
-
-Without framework abstractions, debugging is more straightforward:
-- Full visibility into what each agent is thinking and doing
-- Artifacts saved at every step (screenshots, actions, verdicts)
-- When something fails, I know exactly where to look
-- No mysterious framework behaviors to reverse-engineer
+**5. Mobile-First Integration**
+- ADB commands built directly into action primitives
+- Screenshot capture and UI XML parsing exactly when needed
+- Mobile-specific behaviors as first-class features
 
 ### Technical Stack
-
-The implementation consists of:
-- **Google Gemini API** via the `google-genai` SDK for LLM inference
-- **Structured JSON outputs** for action specifications
-- **Multimodal prompts** combining text instructions with screenshots
-- **ADB CLI** for Android device control
-- **XML parsing** for UI hierarchy analysis
+- Google Gemini API via `google-genai` SDK
+- Structured JSON outputs for actions
+- Multimodal prompts (text + screenshots)
+- ADB CLI for Android control
+- XML parsing for UI hierarchy
 
 ### Trade-offs
 
 **Benefits:**
-- Minimal dependencies and lightweight codebase
-- Complete control over all agent behaviors
-- Straightforward to extend and modify
-- Not locked into any specific LLM provider
+- Minimal dependencies, lightweight codebase
+- Not locked into any LLM provider
+- Ready for SLM integration and real-time testing
+- Complete control over agent behaviors
 
 **Limitations:**
-- No built-in memory across test runs (each test starts fresh)
-- Had to implement retry and error handling manually
-- Won't scale to massive parallel test execution without additional work
+- No built-in memory across test runs
+- Manual retry/error handling implementation
+- Additional work needed for massive parallel execution
 
 ### Summary
 
-For this mobile QA automation project, building a custom solution made more sense than adopting a general-purpose agent framework. The supervisor-planner-executor pattern is simple enough that framework overhead would add complexity without clear benefits. Direct API access to Gemini provides the multimodal capabilities I need while keeping the implementation clean and maintainable.
+Building a custom solution provided the flexibility needed for future SLM integration while keeping the implementation clean and maintainable. The architecture is designed to easily swap in faster vision-language models for real-time mobile testing scenarios.
