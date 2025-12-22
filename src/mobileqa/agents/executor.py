@@ -15,6 +15,8 @@ class ExecutionResult:
     success: bool
     message: str
     error: str = ""
+    # NEW: Reward tracking (populated by Supervisor)
+    step_reward: Any = None  # Optional[StepReward], using Any to avoid circular import
 
 
 class ExecutorAgent:

@@ -15,6 +15,7 @@ from .llm.gemini_client import GeminiClient
 from .agents.planner import PlannerAgent
 from .agents.executor import ExecutorAgent
 from .agents.supervisor import SupervisorAgent, VerdictType
+from .evaluation.subgoals import SubgoalDecomposer, RewardCalculator, SubgoalStatus
 
 
 class MobileQARunner:
@@ -23,7 +24,7 @@ class MobileQARunner:
     def __init__(
         self,
         device_id: str,
-        model: str = "gemini-1.5-flash",
+        model: str = "gemini-2.0-flash-exp",
         artifacts_dir: str = "artifacts"
     ):
         """
@@ -89,7 +90,7 @@ class MobileQARunner:
 
                     # Tap the element
                     print(f"  Auto-handling popup: '{popup_text}' at ({x}, {y})")
-                    self.adb.tap_xy(x, y, wait_after=0.0)
+                    self.adb.tap_xy(x, y, wait_after=0.3)  # SUPER FAST
                     handled_any = True
                     found_popup = True
                     tapped_locations.add(location_key)
@@ -99,13 +100,16 @@ class MobileQARunner:
                 # No more popups found
                 break
 
-            # Refresh UI dump for next iteration
+            # Wait and refresh UI dump for next iteration
+            time.sleep(0.2)  # SUPER FAST
             self.ui_parser.dump_ui(ui_xml_path)
 
         # Save artifact note if we handled popups
         if handled_any:
             with open(step_dir / "auto_handled_popup.txt", 'w') as f:
                 f.write(f"auto_handled_popup=true\nTapped locations: {len(tapped_locations)}\n")
+            # Extra wait after handling popups to let UI fully settle
+            time.sleep(0.3)  # SUPER FAST
             # Refresh UI dump one final time
             self.ui_parser.dump_ui(ui_xml_path)
 
@@ -174,10 +178,58 @@ class MobileQARunner:
                 # Simple setup step execution (could be enhanced)
                 #time.sleep(0.5)
 
+        # NEW: Decompose test goal into subgoals
+        print("\nDecomposing test goal into subgoals...")
+
+        # Capture initial state for decomposition
+        initial_screenshot = str(test_artifacts_dir / "initial_screenshot.png")
+        initial_ui_xml = str(test_artifacts_dir / "initial_ui.xml")
+
+        self.adb.screenshot(initial_screenshot)
+        self.ui_parser.dump_ui(initial_ui_xml)
+        initial_ui_summary = self.ui_parser.get_ui_summary(initial_ui_xml)
+
+        # Decompose into subgoals
+        decomposer = SubgoalDecomposer(self.llm)
+        subgoal_decomposition = decomposer.decompose_test_goal(
+            test_goal=test_goal,
+            screenshot_path=initial_screenshot,
+            ui_xml_summary=initial_ui_summary
+        )
+
+        # Save subgoal decomposition
+        with open(test_artifacts_dir / "subgoals.json", 'w') as f:
+            json.dump({
+                'test_goal': test_goal,
+                'subgoals': [
+                    {
+                        'id': sg.id,
+                        'description': sg.description,
+                        'detection_criteria': sg.detection_criteria,
+                        'status': sg.status.value
+                    }
+                    for sg in subgoal_decomposition.subgoals
+                ]
+            }, f, indent=2)
+
+        print(f"Identified {len(subgoal_decomposition.subgoals)} subgoals:")
+        for sg in subgoal_decomposition.subgoals:
+            print(f"  - {sg.description}")
+
+        # Initialize reward calculator
+        reward_calculator = RewardCalculator(
+            total_subgoals=len(subgoal_decomposition.subgoals)
+        )
+
+        # Update supervisor with subgoal decomposition and reward calculator
+        self.supervisor.subgoal_decomposition = subgoal_decomposition
+        self.supervisor.reward_calculator = reward_calculator
+
         # Run test steps
         step_number = 0
         previous_actions = []
         final_verdict = None
+        step_rewards = []  # NEW: Track step rewards
 
         # State tracking for loop detection
         ui_state_hashes = []
@@ -234,15 +286,15 @@ class MobileQARunner:
                         print(f"UI stuck detected. Recovery attempt {recovery_attempt}/3")
 
                         if recovery_attempt == 1:
-                            print("Recovery: quick retry...")
-                            # No wait
+                            print("Recovery: waiting 2 seconds...")
+                            time.sleep(2)
                         elif recovery_attempt == 2:
                             print("Recovery: pressing BACK...")
-                            self.adb.keyevent(4, wait_after=0.0)
+                            self.adb.keyevent(4, wait_after=1.5)
                         elif recovery_attempt >= 3:
                             print("Recovery: HOME and relaunch...")
-                            self.adb.keyevent(3, wait_after=0.0)
-                            self.adb.start_activity(package_name, wait_after=0.0)
+                            self.adb.keyevent(3, wait_after=1.0)
+                            self.adb.start_activity(package_name, wait_after=2.0)
 
                             # Check if still stuck after relaunch
                             self.ui_parser.dump_ui(ui_xml_path)
@@ -353,6 +405,10 @@ class MobileQARunner:
             # Update previous actions
             previous_actions.append(action)
 
+            # Wait for UI to settle after action
+            if exec_result.success and action['action_type'] not in ['wait', 'done']:
+                time.sleep(1)
+
             # Capture post-action state
             post_screenshot_path = str(step_dir / "screenshot_post.png")
             post_ui_xml_path = str(step_dir / "ui_post.xml")
@@ -372,14 +428,30 @@ class MobileQARunner:
                 ui_xml_summary=post_ui_summary
             )
 
-            # Save verdict
+            # NEW: Collect step reward
+            if verdict.step_reward:
+                step_rewards.append(verdict.step_reward)
+                print(f"Step reward: {verdict.step_reward.step_penalty + verdict.step_reward.subgoal_reward:.3f} "
+                      f"(cumulative: {verdict.step_reward.cumulative_reward:.3f})")
+
+            # Save verdict with subgoal and reward info
             with open(step_dir / "verdict.json", 'w') as f:
-                json.dump({
+                verdict_data = {
                     'verdict': verdict.verdict.value,
                     'reason': verdict.reason,
                     'step_number': verdict.step_number,
-                    'details': verdict.details
-                }, f, indent=2)
+                    'details': verdict.details,
+                    'subgoals_achieved': verdict.subgoals_achieved_this_step,
+                }
+                if verdict.step_reward:
+                    verdict_data['step_reward'] = {
+                        'step_penalty': verdict.step_reward.step_penalty,
+                        'subgoal_reward': verdict.step_reward.subgoal_reward,
+                        'cumulative_reward': verdict.step_reward.cumulative_reward,
+                        'subgoals_achieved_count': verdict.step_reward.total_subgoals_achieved,
+                        'total_subgoals': verdict.step_reward.total_subgoals
+                    }
+                json.dump(verdict_data, f, indent=2)
 
             print(f"Verdict: {verdict.verdict.value} - {verdict.reason}")
 
@@ -401,14 +473,82 @@ class MobileQARunner:
         # Print final verdict
         print(f"\n{self.supervisor.format_verdict(final_verdict)}")
 
-        # Save final test result
+        # NEW: Calculate final reward
+        test_passed = (final_verdict.verdict == VerdictType.PASS)
+        reward_summary = reward_calculator.calculate_final_reward(
+            total_steps=step_number,
+            test_passed=test_passed,
+            step_rewards=step_rewards
+        )
+
+        # Save final subgoal status
+        with open(test_artifacts_dir / "subgoals_final.json", 'w') as f:
+            json.dump({
+                'test_goal': test_goal,
+                'subgoals': [
+                    {
+                        'id': sg.id,
+                        'description': sg.description,
+                        'status': sg.status.value,
+                        'achieved_at_step': sg.achieved_at_step,
+                        'confidence': sg.confidence
+                    }
+                    for sg in subgoal_decomposition.subgoals
+                ]
+            }, f, indent=2)
+
+        # Save reward summary
+        with open(test_artifacts_dir / "reward_summary.json", 'w') as f:
+            json.dump({
+                'total_steps': reward_summary.total_steps,
+                'total_step_penalty': reward_summary.total_step_penalty,
+                'total_subgoal_reward': reward_summary.total_subgoal_reward,
+                'completion_bonus': reward_summary.completion_bonus,
+                'final_reward': reward_summary.final_reward,
+                'subgoals_achieved': reward_summary.subgoals_achieved,
+                'total_subgoals': reward_summary.total_subgoals,
+                'subgoal_completion_rate': reward_summary.subgoal_completion_rate,
+                'step_rewards': [
+                    {
+                        'step': sr.step_number,
+                        'penalty': sr.step_penalty,
+                        'reward': sr.subgoal_reward,
+                        'cumulative': sr.cumulative_reward
+                    }
+                    for sr in reward_summary.step_rewards
+                ]
+            }, f, indent=2)
+
+        # Print reward summary
+        print(f"\n{'='*60}")
+        print("REWARD SUMMARY")
+        print(f"{'='*60}")
+        print(f"Total Steps: {reward_summary.total_steps}")
+        print(f"Step Penalty: {reward_summary.total_step_penalty:.3f}")
+        print(f"Subgoal Reward: {reward_summary.total_subgoal_reward:.3f} ({reward_summary.subgoals_achieved}/{reward_summary.total_subgoals} subgoals)")
+        print(f"Completion Bonus: {reward_summary.completion_bonus:.3f}")
+        print(f"Final Reward: {reward_summary.final_reward:.3f}")
+        print(f"Subgoal Completion Rate: {reward_summary.subgoal_completion_rate:.1%}")
+        print(f"{'='*60}\n")
+
+        # Save final test result with reward info
         result = {
             'test_name': test_name,
             'verdict': final_verdict.verdict.value,
             'reason': final_verdict.reason,
             'details': final_verdict.details,
             'total_steps': step_number,
-            'artifacts_dir': str(test_artifacts_dir)
+            'artifacts_dir': str(test_artifacts_dir),
+            # NEW: Reward information
+            'reward_summary': {
+                'final_reward': reward_summary.final_reward,
+                'step_penalty': reward_summary.total_step_penalty,
+                'subgoal_reward': reward_summary.total_subgoal_reward,
+                'completion_bonus': reward_summary.completion_bonus,
+                'subgoals_achieved': reward_summary.subgoals_achieved,
+                'total_subgoals': reward_summary.total_subgoals,
+                'completion_rate': reward_summary.subgoal_completion_rate
+            }
         }
 
         with open(test_artifacts_dir / "test_result.json", 'w') as f:
@@ -471,8 +611,8 @@ def main():
     )
     parser.add_argument(
         '--model',
-        default='gemini-1.5-flash',
-        help='LLM model to use (default: gemini-1.5-flash)'
+        default='gemini-2.0-flash-exp',
+        help='LLM model to use (default: gemini-2.0-flash-exp)'
     )
     parser.add_argument(
         '--artifacts',

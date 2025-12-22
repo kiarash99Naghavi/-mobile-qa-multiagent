@@ -2,11 +2,17 @@
 Supervisor Agent: Monitors test execution and determines PASS/FAIL verdict.
 """
 from typing import Dict, Any, List, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from ..llm.gemini_client import GeminiClient
 from .executor import ExecutionResult
+from ..evaluation.subgoals import (
+    SubgoalDecomposition,
+    SubgoalStatus,
+    RewardCalculator,
+    StepReward
+)
 
 
 class VerdictType(Enum):
@@ -24,6 +30,9 @@ class TestVerdict:
     reason: str
     step_number: int
     details: str = ""
+    # NEW: Subgoal and reward tracking
+    subgoals_achieved_this_step: List[str] = field(default_factory=list)
+    step_reward: Optional[StepReward] = None
 
 
 class SupervisorAgent:
@@ -32,16 +41,26 @@ class SupervisorAgent:
     Distinguishes between failed actions and failed assertions.
     """
 
-    def __init__(self, llm_client: GeminiClient, max_steps: int = 30):
+    def __init__(
+        self,
+        llm_client: GeminiClient,
+        max_steps: int = 30,
+        subgoal_decomposition: Optional[SubgoalDecomposition] = None,
+        reward_calculator: Optional[RewardCalculator] = None
+    ):
         """
         Initialize Supervisor agent.
 
         Args:
             llm_client: Gemini client for LLM-based verification
             max_steps: Maximum steps before timeout
+            subgoal_decomposition: Optional subgoal decomposition for tracking
+            reward_calculator: Optional reward calculator for scoring
         """
         self.llm = llm_client
         self.max_steps = max_steps
+        self.subgoal_decomposition = subgoal_decomposition
+        self.reward_calculator = reward_calculator
 
     def evaluate_step(
         self,
@@ -80,38 +99,228 @@ class SupervisorAgent:
 
         # Handle action execution failure
         if not execution_result.success and action_type != "assert":
+            # Even on failure, check for subgoals (partial progress)
+            subgoals_achieved = []
+            step_reward = None
+            if self.subgoal_decomposition and self.reward_calculator:
+                subgoals_achieved = self.detect_subgoals_achieved(
+                    step_number=step_number,
+                    action=action,
+                    execution_result=execution_result,
+                    screenshot_path=screenshot_path,
+                    ui_xml_summary=ui_xml_summary
+                )
+                step_reward = self.reward_calculator.calculate_step_reward(
+                    step_number=step_number,
+                    subgoals_achieved_this_step=subgoals_achieved
+                )
             return TestVerdict(
                 verdict=VerdictType.FAIL_ACTION,
                 reason=f"Failed to execute action: {action_desc}",
                 step_number=step_number,
-                details=execution_result.error or execution_result.message
+                details=execution_result.error or execution_result.message,
+                subgoals_achieved_this_step=subgoals_achieved,
+                step_reward=step_reward
             )
 
         # Handle "done" action - test completion
         if action_type == "done":
-            return self._verify_final_state(
+            verdict = self._verify_final_state(
                 test_goal=test_goal,
                 step_number=step_number,
                 screenshot_path=screenshot_path,
                 ui_xml_summary=ui_xml_summary
             )
+            # Add subgoal detection for final state
+            subgoals_achieved = []
+            step_reward = None
+            if self.subgoal_decomposition and self.reward_calculator:
+                subgoals_achieved = self.detect_subgoals_achieved(
+                    step_number=step_number,
+                    action=action,
+                    execution_result=execution_result,
+                    screenshot_path=screenshot_path,
+                    ui_xml_summary=ui_xml_summary
+                )
+                step_reward = self.reward_calculator.calculate_step_reward(
+                    step_number=step_number,
+                    subgoals_achieved_this_step=subgoals_achieved
+                )
+            verdict.subgoals_achieved_this_step = subgoals_achieved
+            verdict.step_reward = step_reward
+            return verdict
 
         # Handle assertion action
         if action_type == "assert":
-            return self._verify_assertion(
+            verdict = self._verify_assertion(
                 test_goal=test_goal,
                 assertion=action.get("params", {}).get("condition", action_desc),
                 step_number=step_number,
                 screenshot_path=screenshot_path,
                 ui_xml_summary=ui_xml_summary
             )
+            # Add subgoal detection and reward calculation for assertions too
+            subgoals_achieved = []
+            step_reward = None
+            if self.subgoal_decomposition and self.reward_calculator:
+                subgoals_achieved = self.detect_subgoals_achieved(
+                    step_number=step_number,
+                    action=action,
+                    execution_result=execution_result,
+                    screenshot_path=screenshot_path,
+                    ui_xml_summary=ui_xml_summary
+                )
+                step_reward = self.reward_calculator.calculate_step_reward(
+                    step_number=step_number,
+                    subgoals_achieved_this_step=subgoals_achieved
+                )
+            verdict.subgoals_achieved_this_step = subgoals_achieved
+            verdict.step_reward = step_reward
+            return verdict
 
         # Regular action succeeded, continue
+        # NEW: Detect subgoals achieved and calculate rewards
+        subgoals_achieved = []
+        step_reward = None
+
+        if self.subgoal_decomposition and self.reward_calculator:
+            subgoals_achieved = self.detect_subgoals_achieved(
+                step_number=step_number,
+                action=action,
+                execution_result=execution_result,
+                screenshot_path=screenshot_path,
+                ui_xml_summary=ui_xml_summary
+            )
+
+            # Calculate step reward
+            step_reward = self.reward_calculator.calculate_step_reward(
+                step_number=step_number,
+                subgoals_achieved_this_step=subgoals_achieved
+            )
+
         return TestVerdict(
             verdict=VerdictType.RUNNING,
             reason=f"Step {step_number} completed: {action_desc}",
-            step_number=step_number
+            step_number=step_number,
+            subgoals_achieved_this_step=subgoals_achieved,
+            step_reward=step_reward
         )
+
+    def detect_subgoals_achieved(
+        self,
+        step_number: int,
+        action: Dict[str, Any],
+        execution_result: ExecutionResult,
+        screenshot_path: str,
+        ui_xml_summary: str
+    ) -> List[str]:
+        """
+        Detect which pending subgoals have been achieved in this step.
+
+        Args:
+            step_number: Current step number
+            action: Action that was executed
+            execution_result: Result of action execution
+            screenshot_path: Post-action screenshot
+            ui_xml_summary: Post-action UI state
+
+        Returns:
+            List of subgoal IDs that were achieved this step
+        """
+        if not self.subgoal_decomposition:
+            return []
+
+        achieved_subgoals = []
+        pending_subgoals = [
+            sg for sg in self.subgoal_decomposition.subgoals
+            if sg.status == SubgoalStatus.PENDING
+        ]
+
+        if not pending_subgoals:
+            return []
+
+        # Build context for LLM detection
+        pending_descriptions = "\n".join([
+            f"- {sg.id}: {sg.description} (Detection: {sg.detection_criteria})"
+            for sg in pending_subgoals
+        ])
+
+        prompt = f"""You are evaluating whether any pending subgoals were achieved in this test step.
+
+ACTION EXECUTED: {action.get('action_type')} - {action.get('description')}
+EXECUTION SUCCESS: {execution_result.success}
+EXECUTION MESSAGE: {execution_result.message}
+
+PENDING SUBGOALS:
+{pending_descriptions}
+
+CURRENT UI STATE:
+{ui_xml_summary}
+
+Based on the action executed, execution result, screenshot, and current UI state, determine which (if any) of the pending subgoals have been ACHIEVED in this step.
+
+DETECTION RULES:
+1. A subgoal is achieved if its detection criteria are MET (e.g., UI element visible, action completed)
+2. Be CONSERVATIVE - only mark as achieved if there's clear evidence
+3. Subgoals are typically achieved in order, but not always
+4. Multiple subgoals can be achieved in a single step
+5. If uncertain, do NOT mark as achieved (wait for more evidence)
+
+Examples for Obsidian tasks:
+- Subgoal "Obsidian app opened" is achieved if Obsidian main screen or vault list is visible in UI state
+- Subgoal "Vault creation initiated" is achieved if tap on create vault button succeeded
+- Subgoal "Note creation initiated" is achieved if action was tap_by_text on 'Create new note' and execution succeeded
+- Subgoal "Title field populated" is achieved if input_text action succeeded with field_type='title' and correct text
+- Subgoal "Body field populated" is achieved if input_text action succeeded with field_type='body' and correct text
+- Subgoal "Settings accessed" is achieved if UI state shows Settings screen with options like "Appearance", "About", etc.
+- Subgoal "Inside vault view" is achieved if UI shows 'Create new note' button or empty vault screen
+
+Respond with JSON:
+{{
+    "achieved_subgoals": [
+        {{
+            "id": "subgoal_X",
+            "confidence": 0.95,
+            "reason": "Brief explanation of why this subgoal is achieved"
+        }},
+        ...
+    ]
+}}
+
+If NO subgoals were achieved, return empty list:
+{{
+    "achieved_subgoals": []
+}}
+
+Respond with valid JSON only:"""
+
+        try:
+            result = self.llm.generate_json(
+                prompt=prompt,
+                image_path=screenshot_path,
+                temperature=0.2
+            )
+
+            for achieved in result.get("achieved_subgoals", []):
+                subgoal_id = achieved.get("id")
+                confidence = achieved.get("confidence", 0.0)
+                reason = achieved.get("reason", "")
+
+                # Find and update the subgoal
+                for sg in self.subgoal_decomposition.subgoals:
+                    if sg.id == subgoal_id and sg.status == SubgoalStatus.PENDING:
+                        sg.status = SubgoalStatus.ACHIEVED
+                        sg.achieved_at_step = step_number
+                        sg.confidence = confidence
+                        achieved_subgoals.append(subgoal_id)
+                        print(f"  ✓ Subgoal achieved: {sg.description} (confidence: {confidence:.2f})")
+                        break
+
+            return achieved_subgoals
+
+        except Exception as e:
+            print(f"  Warning: Subgoal detection failed: {e}")
+            return []
 
     def _verify_assertion(
         self,
