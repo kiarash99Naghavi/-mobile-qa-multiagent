@@ -1,12 +1,13 @@
 # Reward Evaluation System - Implementation Guide
-
+Inspired from work of: https://github.com/gyaanantia/android_world_agents
 ## Overview
 
 This implementation adds **automatic subgoal detection** and **comprehensive reward scoring** to the Mobile QA Multi-Agent System, enabling quantitative measurement of agent performance for Obsidian mobile testing.
 
-## What's New
+<img width="457" height="161" alt="image" src="https://github.com/user-attachments/assets/2f53bba9-2f8f-45d9-a246-25efad7b7565" />
 
-### ✨ Features Added
+
+### Features Added
 
 1. **LLM-Based Subgoal Decomposition**
    - Automatically breaks down test goals into 3-7 measurable subgoals
@@ -392,40 +393,6 @@ The system includes Obsidian-specific prompts and examples:
 - Detection: ~1-3 seconds per step
 - Total overhead: ~5-10% of test execution time
 - Negligible impact on test reliability
-
-## Git Commit Structure
-
-This implementation is structured for clean Git commits:
-
-```
-Commit 1: Add reward evaluation system
-
-Files added:
-- src/mobileqa/evaluation/__init__.py
-- src/mobileqa/evaluation/subgoals.py
-- test_reward_system.py
-- REWARD_SYSTEM.md
-
-Files modified:
-- src/mobileqa/agents/supervisor.py (+150 lines)
-- src/mobileqa/agents/executor.py (+2 lines)
-- src/mobileqa/main.py (+100 lines)
-
-Changes:
-- Add SubgoalDecomposer for LLM-based goal breakdown
-- Add RewardCalculator for efficiency + progress + success scoring
-- Enhance SupervisorAgent with subgoal detection
-- Integrate reward tracking into test execution loop
-- Add new artifacts: subgoals.json, reward_summary.json
-- Update verdict.json and test_result.json with reward info
-- Maintain backward compatibility with optional parameters
-
-Benefits:
-- Quantitative agent performance metrics
-- Progress tracking via subgoal completion rates
-- Efficiency measurement via step penalties
-- Comprehensive test insights for debugging and optimization
-```
 
 ## Configuration
 
